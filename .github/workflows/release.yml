@@ -1,0 +1,257 @@
+# builds every client and the server bundle, then publishes them as one GitHub Release
+#   tag push v1.2.3     -> release v1.2.3 (prerelease when the version has a suffix such as -beta.1)
+#   manual dispatch     -> draft release for the given version (default: desktop/package.json)
+# optional secrets for a signed Android release apk (otherwise a debug-signed apk is attached):
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v (e.g. 0.2.1). Empty = version in desktop/package.json"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: v
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then v="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSION" ]; then v="${INPUT_VERSION#v}"
+          else v="$(jq -r .version desktop/package.json)"; fi
+          if ! printf '%s' "$v" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::'$v' is not a semver version"; exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  windows:
+    name: Windows installer (NSIS)
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Build web UI
+        run: npm ci && npx vite build
+      - name: Build installer
+        working-directory: desktop
+        run: |
+          npm ci
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm run dist:win
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: release/*.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux packages (AppImage, deb, rpm, tar.gz)
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Install rpmbuild
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends rpm
+      - name: Build web UI
+        run: npm ci && npx vite build
+      - name: Build packages
+        working-directory: desktop
+        run: |
+          npm ci
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm run dist:linux
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.rpm
+            release/*.tar.gz
+          if-no-files-found: error
+
+  macos:
+    name: macOS dmg (unsigned)
+    needs: version
+    runs-on: macos-latest
+    timeout-minutes: 45
+    # unsigned and not notarized, so a mac failure must not block the other platforms
+    continue-on-error: true
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+      - name: Build web UI
+        run: npm ci && npx vite build
+      - name: Build dmg
+        working-directory: desktop
+        run: |
+          npm ci
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          npm run dist:mac
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: release/*.dmg
+          if-no-files-found: error
+
+  android:
+    name: Android apk
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: platform-tools platforms;android-36 build-tools;35.0.0
+      - name: Build web UI
+        run: npm ci && npx vite build
+      - name: Build apk (signed release when the keystore secrets exist, debug otherwise)
+        working-directory: mobile
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          npm ci
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/release.jks"
+          fi
+          npm run apk
+          rm -f "$RUNNER_TEMP/release.jks"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: android
+          path: release/*.apk
+          if-no-files-found: error
+
+  server:
+    name: Server bundle and source
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Build web UI
+        run: npm ci && npx vite build
+      - name: Bundle server
+        run: |
+          npm i --no-save --no-audit --no-fund 'esbuild@^0.28.2'
+          dir="release/hl-quant-server-$VERSION"
+          mkdir -p "$dir/web"
+          node desktop/scripts/bundle-server.mjs . "$dir/server.mjs"
+          cp -r web/dist "$dir/web/dist"
+          cp .env.example "$dir/"
+          cp "$dir/server.mjs" "release/hl-quant-server-$VERSION.mjs"
+          tar -C release -czf "release/hl-quant-server-$VERSION.tar.gz" "hl-quant-server-$VERSION"
+          git archive --format=tar.gz --prefix="hl-quant-$VERSION/" -o "release/hl-quant-$VERSION-source.tar.gz" HEAD
+      - uses: actions/upload-artifact@v7
+        with:
+          name: server
+          path: |
+            release/hl-quant-server-*.mjs
+            release/hl-quant-server-*.tar.gz
+            release/hl-quant-*-source.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    needs: [version, windows, linux, macos, android, server]
+    # the dmg is best effort; every other platform must have succeeded
+    if: >-
+      !cancelled() && needs.windows.result == 'success' && needs.linux.result == 'success' &&
+      needs.android.result == 'success' && needs.server.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - run: ls -la dist
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          name: HL Quant ${{ needs.version.outputs.version }}
+          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          prerelease: ${{ contains(needs.version.outputs.version, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: dist/*
