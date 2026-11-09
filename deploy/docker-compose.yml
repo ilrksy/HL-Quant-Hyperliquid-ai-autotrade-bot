@@ -1,0 +1,30 @@
+# HL Quant self-hosted server. From this folder:  docker compose up -d --build
+# settings: copy ../.env.example to ../.env (optional); the API token is printed in `docker compose logs`
+# requires Docker Compose v2.24+ for the optional env_file syntax
+name: hl-quant
+
+services:
+  hl-quant:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: hl-quant:latest
+    restart: unless-stopped
+    # 8787 on every host interface so phones and PCs on the LAN can connect;
+    # use "127.0.0.1:8787:8787" when only a tunnel (Tailscale serve, cloudflared) should reach it
+    ports:
+      - "8787:8787"
+    env_file:
+      - path: ../.env
+        required: false
+    # these win over ../.env so the container always listens where the port mapping and volume expect
+    environment:
+      HOST: 0.0.0.0
+      PORT: "8787"
+      DATA_DIR: /data
+      WEB_DIST: /app/web
+    volumes:
+      - hl-quant-data:/data
+
+volumes:
+  hl-quant-data:
