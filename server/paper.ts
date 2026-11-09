@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import type { Side, TradeRecord } from "../core/types";
 import type { AccountSnapshot, Broker, FillView, OpenRequest, OrderView } from "./broker";
 
@@ -45,7 +46,7 @@ export class PaperBroker implements Broker {
   // writes state after every mutation
   private save() {
     if (!this.file) return;
-    mkdirSync("data", { recursive: true });
+    mkdirSync(dirname(this.file), { recursive: true });
     writeFileSync(this.file, JSON.stringify(this.s));
   }
 
