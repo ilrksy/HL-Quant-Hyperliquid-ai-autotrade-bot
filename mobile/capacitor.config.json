@@ -1,0 +1,20 @@
+{
+  "appId": "com.hlquant.terminal",
+  "appName": "HL Quant",
+  "webDir": "www",
+  "backgroundColor": "#0a1419",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "backgroundColor": "#0a1419",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SystemBars": {
+      "style": "DARK",
+      "insetsHandling": "css"
+    }
+  }
+}
