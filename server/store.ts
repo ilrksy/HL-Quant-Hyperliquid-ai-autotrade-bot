@@ -1,3 +1,4 @@
+import { chmodSync } from "node:fs";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { AiCallView, DecisionView, EventView, TradeView } from "../shared/types";
 
@@ -64,9 +65,16 @@ export class Store {
   readonly db: DatabaseSync;
   private stmts = new Map<string, StatementSync>();
 
-  // wal mode keeps writes cheap while the dashboard reads concurrently
+  // wal mode keeps writes cheap while the dashboard reads concurrently; owner-only because ai keys and bot tokens live here
   constructor(file: string) {
     this.db = new DatabaseSync(file);
+    if (file !== ":memory:") {
+      try {
+        chmodSync(file, 0o600);
+      } catch {
+        // filesystems without unix permissions (e.g. some windows mounts) keep their defaults
+      }
+    }
     this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=3000;");
     this.db.exec(SCHEMA);
   }

@@ -154,6 +154,19 @@ describe("company pipeline", () => {
     expect(store.events({ cat: "trade" })[0].msg).toMatch(/^CLOSE LONG TEST/);
   });
 
+  it("keeps cycling after a bookkeeping failure instead of wedging the loop", async () => {
+    const { company, store } = setup(fakeAi({}));
+    const addCycle = store.addCycle.bind(store);
+    store.addCycle = () => { throw new Error("disk full"); };
+    await company.cycle();
+    expect(company.state().pipeline.lastError).toMatch(/bookkeeping failed: disk full/);
+    store.addCycle = addCycle;
+    const before = company.state().pipeline.cycle;
+    await company.cycle();
+    expect(company.state().pipeline.cycle).toBe(before + 1);
+    expect(company.state().pipeline.lastError).toBeNull();
+  });
+
   it("kill switch flattens bot positions and disarms", async () => {
     const { company, broker } = setup(fakeAi({
       research: { items: [{ id: 1, decision: "long", confidence: 0.8, thesis: "t", risk: "r" }] },

@@ -203,8 +203,13 @@ export class Company {
     this.nextCycleAt = Date.now() + ms;
     this.timer = setTimeout(async () => {
       const t0 = Date.now();
-      await this.cycle();
-      if (this.running) this.schedule(Math.max(1000, this.d.settings.get().bot.cycleSec * 1000 - (Date.now() - t0)));
+      try {
+        await this.cycle();
+      } catch (e) {
+        console.error("[hl-quant] cycle crashed", e);
+      } finally {
+        if (this.running) this.schedule(Math.max(1000, this.d.settings.get().bot.cycleSec * 1000 - (Date.now() - t0)));
+      }
     }, ms);
   }
 
@@ -695,27 +700,33 @@ export class Company {
         this.d.bus.log("error", "pipeline", "ops", `cycle ${c} failed: ${cycleError}`, { cycle: c });
       }
     } finally {
-      const ms = Date.now() - t0;
-      this.lastCycleAt = Date.now();
-      this.lastCycleMs = ms;
-      this.funnel = f;
-      this.lastError = cycleError;
-      for (const t of trails.values()) {
-        const dv = this.d.store.addDecision({
-          ts: Date.now(), cycle: c, coin: t.cand.coin, side: t.cand.side, score: t.cand.signal.score, regime: t.cand.signal.regime,
-          stage: t.stage, outcome: t.outcome, reason: t.reason, research: t.research, risk: t.risk, boss: t.boss, audit: t.audit,
-        });
-        this.recent.unshift(dv);
-        this.decided.set(`${t.cand.coin}|${t.cand.side}|${t.cand.signal.time}`, Date.now());
-        if (t.outcome !== "executed") this.d.bus.log("info", "pipeline", STAGES.find((x) => x.id === t.stage)?.agent ?? "ops",
-          `${t.cand.coin} ${t.cand.side} ${t.outcome} at ${t.stage}: ${t.reason}`, { coin: t.cand.coin, cycle: c, data: { kind: "decision", id: dv.id } });
+      try {
+        const ms = Date.now() - t0;
+        this.lastCycleAt = Date.now();
+        this.lastCycleMs = ms;
+        this.funnel = f;
+        this.lastError = cycleError;
+        for (const t of trails.values()) {
+          const dv = this.d.store.addDecision({
+            ts: Date.now(), cycle: c, coin: t.cand.coin, side: t.cand.side, score: t.cand.signal.score, regime: t.cand.signal.regime,
+            stage: t.stage, outcome: t.outcome, reason: t.reason, research: t.research, risk: t.risk, boss: t.boss, audit: t.audit,
+          });
+          this.recent.unshift(dv);
+          this.decided.set(`${t.cand.coin}|${t.cand.side}|${t.cand.signal.time}`, Date.now());
+          if (t.outcome !== "executed") this.d.bus.log("info", "pipeline", STAGES.find((x) => x.id === t.stage)?.agent ?? "ops",
+            `${t.cand.coin} ${t.cand.side} ${t.outcome} at ${t.stage}: ${t.reason}`, { coin: t.cand.coin, cycle: c, data: { kind: "decision", id: dv.id } });
+        }
+        this.recent = this.recent.slice(0, 60);
+        for (const [k, at] of this.decided) if (Date.now() - at > 6 * 3_600_000) this.decided.delete(k);
+        this.d.store.addCycle({ id: c, ts: t0, ms, scanned: f.scanned, candidates: f.candidates, proposals: f.passedRisk, approved: f.approved, executed: f.executed });
+        this.save();
+      } catch (e) {
+        this.lastError = `bookkeeping failed: ${(e as Error).message}`;
+        console.error("[hl-quant] cycle bookkeeping failed", e);
+      } finally {
+        this.busy = false;
+        this.d.bus.emit("cycle", c);
       }
-      this.recent = this.recent.slice(0, 60);
-      for (const [k, at] of this.decided) if (Date.now() - at > 6 * 3_600_000) this.decided.delete(k);
-      this.d.store.addCycle({ id: c, ts: t0, ms, scanned: f.scanned, candidates: f.candidates, proposals: f.passedRisk, approved: f.approved, executed: f.executed });
-      this.save();
-      this.busy = false;
-      this.d.bus.emit("cycle", c);
     }
   }
 
@@ -1036,6 +1047,9 @@ export class Company {
         this.d.bus.log("warn", "intel", "deep", `Deep research failed: ${res.error}`);
         this.agents.done("deep", "warn", "no briefing", Date.now() - t0);
       }
+    } catch (e) {
+      this.d.bus.log("error", "intel", "deep", `Deep research crashed: ${(e as Error).message}`);
+      this.agents.done("deep", "error", (e as Error).message.slice(0, 120), Date.now() - t0);
     } finally {
       this.p.lastDeepAt = Date.now();
       this.deepBusy = false;

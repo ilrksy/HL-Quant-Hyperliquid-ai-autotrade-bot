@@ -16,9 +16,9 @@ if (wantsLive && !hasKey) throw new Error("TRADING_MODE=live requires HL_PRIVATE
 if (wantsLive && env.LIVE_CONFIRM !== "I_ACCEPT_LOSS_RISK")
   throw new Error("TRADING_MODE=live requires LIVE_CONFIRM=I_ACCEPT_LOSS_RISK");
 
-// every persistent file lives here so one volume or folder backs up the whole server
+// every persistent file lives here so one volume or folder backs up the whole server; owner-only since it holds secrets
 const DATA_DIR = resolve(env.DATA_DIR ?? "data");
-mkdirSync(DATA_DIR, { recursive: true });
+mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
 
 // explicit env token wins, otherwise one is generated on first start and reused afterwards
 function loadToken(): string {

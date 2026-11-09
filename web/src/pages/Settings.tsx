@@ -9,7 +9,7 @@ import { copy, Field, Icon, Panel, Seg, Toggle, toast, useAction } from "../ui";
 function Num({ value, onChange, scale = 1, step, disabled }: { value: number; onChange: (v: number) => void; scale?: number; step?: number; disabled?: boolean }) {
   const show = (v: number) => String(+(v * scale).toFixed(6));
   const [txt, setTxt] = useState(show(value));
-  useEffect(() => { if (Number(txt) / scale !== value) setTxt(show(value)); }, [value, scale]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (Number(txt) / scale !== value) setTxt(show(value)); }, [value, scale]);
   return <input className="input" inputMode="decimal" type="number" step={step} disabled={disabled} value={txt} onChange={(e) => { setTxt(e.target.value); const n = Number(e.target.value); if (e.target.value !== "" && Number.isFinite(n)) onChange(n / scale); }} />;
 }
 

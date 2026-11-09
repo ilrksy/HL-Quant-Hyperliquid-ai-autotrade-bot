@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { networkInterfaces } from "node:os";
 import { extname, join, normalize, sep } from "node:path";
@@ -228,6 +228,11 @@ function download(res: ServerResponse, u: URL, name: string, rows: Record<string
   return SENT;
 }
 
+// live snapshots are cached per cycle, so manual actions refresh them for an immediate dashboard update
+async function refreshAccount() {
+  if (broker.mode === "live") company.snapshot = await broker.snapshot().catch(() => company.snapshot);
+}
+
 // ---- manual trading --------------------------------------------------------------------------------------------
 on("POST", "/api/order", async (req) => {
   const b = await body(req);
@@ -243,17 +248,20 @@ on("POST", "/api/order", async (req) => {
     stopPx: b.stopPx ? num(b.stopPx, "stopPx") : undefined, takePx: b.takePx ? num(b.takePx, "takePx") : undefined, reason: "manual",
   });
   bus.log("success", "trade", "manual", `Manual ${side} ${a.name} ${size} ${b.limitPx ? `limit ${px}` : "market"} → ${res.status}`, { coin: a.name });
+  await refreshAccount();
   return res;
 });
 on("POST", "/api/close", async (req) => {
   const b = await body(req);
   await broker.close(String(b.coin), "manual close");
   bus.log("info", "trade", "manual", `Manual close ${b.coin}`, { coin: String(b.coin) });
+  await refreshAccount();
   return { ok: true };
 });
 on("POST", "/api/cancel", async (req) => {
   const b = await body(req);
   await broker.cancel(String(b.coin), num(b.oid, "oid"));
+  await refreshAccount();
   return { ok: true };
 });
 on("POST", "/api/paper/reset", async (req) => {
@@ -324,18 +332,40 @@ const MIME: Record<string, string> = {
   ".ico": "image/x-icon", ".json": "application/json", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2", ".txt": "text/plain",
 };
 
-// serves the built dashboard with spa fallback, immutable caching for hashed assets
+// regular file check that treats races, null bytes and permission errors as "not there"
+function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+// serves the built dashboard with spa fallback; never throws raw errors so unauthenticated paths cannot crash or leak
 function serveStatic(url: URL, res: ServerResponse) {
   const root = config.webDist;
-  let file = normalize(join(root, decodeURIComponent(url.pathname)));
-  if (!(file === root || file.startsWith(root + sep)) || !existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
-  if (!existsSync(file)) {
+  let rel: string;
+  try {
+    rel = decodeURIComponent(url.pathname);
+  } catch {
+    throw new HttpError(400, "malformed URL");
+  }
+  let file = normalize(join(root, rel));
+  if (!(file === root || file.startsWith(root + sep)) || !isFile(file)) file = join(root, "index.html");
+  if (!isFile(file)) {
     res.writeHead(404, { "content-type": "text/plain" }).end("Dashboard not built. Run `npm run build`, or use `npm run dev` during development.");
     return;
   }
   const immutable = file.includes(`${sep}assets${sep}`);
-  res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
-  createReadStream(file).pipe(res);
+  const stream = createReadStream(file);
+  stream.once("error", () => {
+    if (res.headersSent) res.destroy();
+    else res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+  });
+  stream.once("open", () => {
+    res.writeHead(200, { "content-type": MIME[extname(file)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
+    stream.pipe(res);
+  });
 }
 
 // constant-time token comparison
@@ -355,18 +385,23 @@ const CORS = {
   "access-control-allow-methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS", "access-control-max-age": "600",
 };
 
-// api router: cors, auth, json errors; non-api GETs fall through to the dashboard
+// api router: cors, auth, json errors; non-api GETs fall through to the dashboard; every path is inside the try
 const server = createServer(async (req, res) => {
-  const url = new URL(req.url ?? "/", "http://local");
-  for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
-  if (req.method === "OPTIONS") return void res.writeHead(204).end();
-  if (!url.pathname.startsWith("/api/")) {
-    if (req.method === "GET" || req.method === "HEAD") return serveStatic(url, res);
-    return void res.writeHead(405).end();
-  }
-  const match = routes.map(([m, re, h]) => ({ m, h, p: url.pathname.match(re) })).filter((r) => r.p);
-  const route = match.find((r) => r.m === req.method);
   try {
+    for (const [k, v] of Object.entries(CORS)) res.setHeader(k, v);
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", "http://local");
+    } catch {
+      throw new HttpError(400, "malformed request URL");
+    }
+    if (req.method === "OPTIONS") return void res.writeHead(204).end();
+    if (!url.pathname.startsWith("/api/")) {
+      if (req.method === "GET" || req.method === "HEAD") return serveStatic(url, res);
+      throw new HttpError(405, "method not allowed");
+    }
+    const match = routes.map(([m, re, h]) => ({ m, h, p: url.pathname.match(re) })).filter((r) => r.p);
+    const route = match.find((r) => r.m === req.method);
     if (!route) throw new HttpError(match.length ? 405 : 404, match.length ? "method not allowed" : "not found");
     if (url.pathname !== "/api/health") {
       const ip = req.socket.remoteAddress ?? "?";
@@ -386,9 +421,9 @@ const server = createServer(async (req, res) => {
     if (out === SENT) return;
     res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(out ?? null));
   } catch (e) {
+    if (res.headersSent) return void res.end();
     const status = e instanceof HttpError ? e.status : 500;
-    if (!res.headersSent) res.writeHead(status, { "content-type": "application/json" });
-    res.end(JSON.stringify({ error: (e as Error).message }));
+    res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ error: (e as Error).message }));
   }
 });
 
@@ -404,8 +439,24 @@ server.listen(config.port, config.host, () => {
   telegram.start();
 });
 
-// daily retention so history cannot grow without bound
-setInterval(() => store.prune(90), 86_400_000).unref();
+// daily retention so history cannot grow without bound; a failed prune must not take the daemon down
+setInterval(() => {
+  try {
+    store.prune(90);
+  } catch (e) {
+    console.error("[hl-quant] history prune failed", e);
+  }
+}, 86_400_000).unref();
+
+// last-resort guard: a stray rejected promise is logged to history instead of killing the 24/7 daemon
+process.on("unhandledRejection", (reason) => {
+  console.error("[hl-quant] unhandled rejection", reason);
+  try {
+    bus.log("error", "system", "ops", `Unhandled error: ${reason instanceof Error ? reason.message : String(reason)}`);
+  } catch {
+    // history store unavailable: the console line above is all we can do
+  }
+});
 
 // clean shutdown keeps sqlite consistent and stops polling loops
 function shutdown(sig: string) {

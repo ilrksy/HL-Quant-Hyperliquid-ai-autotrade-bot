@@ -2,7 +2,7 @@
 # install steps: deploy/README.md ("Linux server with systemd")
 [Unit]
 Description=HL Quant self-hosted trading server
-Documentation=https://github.com/ilrksy/makanan/blob/main/deploy/README.md
+Documentation=https://github.com/ilrksy/makanan/blob/HEAD/deploy/README.md
 After=network-online.target
 Wants=network-online.target
 
