@@ -1,0 +1,19 @@
+# build-context filter used by BuildKit for deploy/Dockerfile (docker build -f deploy/Dockerfile .)
+# secrets and local state must never end up in an image layer
+.env
+.env.*
+!.env.example
+data/
+**/node_modules
+# git metadata, local tooling and build outputs that the image rebuilds itself
+.git
+.github
+.hoplite
+.context
+release/
+web/dist
+desktop/build
+desktop/dist
+mobile/www
+mobile/android
+**/*.log
