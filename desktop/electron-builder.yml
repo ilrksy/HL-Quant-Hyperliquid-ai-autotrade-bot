@@ -1,0 +1,95 @@
+# electron-builder config: windows nsis installer, linux appimage/deb/rpm/tar.gz and macos dmg from one source
+# stage first with `node scripts/prepare.mjs` (the npm dist:* scripts do it for you)
+appId: com.hlquant.terminal
+productName: HL Quant
+copyright: Copyright © 2026 HL Quant contributors
+artifactName: HL-Quant-${version}-${os}-${arch}.${ext}
+directories:
+  output: ../release
+  buildResources: build
+files:
+  - package.json
+  - src/**/*
+# dashboard, server bundle and tray images stay outside app.asar so the server child can read them as plain files
+extraResources:
+  - from: build/web
+    to: web
+  - from: build/server
+    to: server
+  - from: build/tray
+    to: tray
+asar: true
+electronLanguages:
+  - en-US
+# the app never needs ELECTRON_RUN_AS_NODE, NODE_OPTIONS or --inspect (the server runs as a utility process)
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  onlyLoadAppFromAsar: true
+publish: null
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: HL Quant
+  uninstallDisplayName: HL Quant
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico
+  runAfterFinish: true
+  deleteAppDataOnUninstall: false
+  artifactName: HL-Quant-Setup-${version}-x64.${ext}
+
+linux:
+  target:
+    - AppImage
+    - deb
+    - rpm
+    - tar.gz
+  category: Finance
+  icon: build/icons
+  executableName: hl-quant
+  maintainer: HL Quant <hlquant@example.com>
+  vendor: HL Quant
+  synopsis: Self-hosted Hyperliquid trading terminal
+  description: >-
+    HL Quant desktop terminal. Connects to a self-hosted HL Quant server, or runs the server
+    on this computer (host mode) so phones and other computers can connect to it.
+  desktop:
+    entry:
+      Comment: Self-hosted Hyperliquid trading terminal
+      Keywords: trading;crypto;hyperliquid;perpetuals;
+appImage:
+  artifactName: HL-Quant-${version}-${arch}.${ext}
+deb:
+  priority: optional
+  artifactName: HL-Quant-${version}-${arch}.${ext}
+rpm:
+  artifactName: HL-Quant-${version}-${arch}.${ext}
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+  category: public.app-category.finance
+  icon: build/icon.png
+  darkModeSupport: true
+  # unsigned release: ad-hoc signature so Apple Silicon can launch it (users still confirm in Gatekeeper)
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+dmg:
+  artifactName: HL-Quant-${version}-mac-${arch}.${ext}

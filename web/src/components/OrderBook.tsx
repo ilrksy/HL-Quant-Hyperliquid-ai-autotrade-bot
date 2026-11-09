@@ -8,7 +8,7 @@ interface Level { px: number; sz: number }
 interface Print { px: number; sz: number; side: "B" | "A"; time: number; tid: number }
 
 // levels shown per side, enough to read depth without scrolling
-const DEPTH = 13;
+const DEPTH = 11;
 
 // live l2 book with cumulative depth bars plus the public trade tape for the selected coin
 export function OrderBook({ coin, testnet, onPrice }: { coin: string; testnet: boolean; onPrice: (p: number) => void }) {
@@ -20,7 +20,9 @@ export function OrderBook({ coin, testnet, onPrice }: { coin: string; testnet: b
     let cancelled = false;
     const subsList: { unsubscribe: () => Promise<void> }[] = [];
     const { subs } = hl(testnet);
-    setBids([]); setAsks([]); setTape([]);
+    setBids([]);
+    setAsks([]);
+    setTape([]);
     (async () => {
       const book = await subs.l2Book({ coin }, (b) => {
         const parse = (l: { px: string; sz: string }[]) => l.slice(0, DEPTH).map((x) => ({ px: +x.px, sz: +x.sz }));
@@ -44,35 +46,33 @@ export function OrderBook({ coin, testnet, onPrice }: { coin: string; testnet: b
   const mid = asks[0] && bids[0] ? (asks[0].px + bids[0].px) / 2 : 0;
 
   return (
-    <div className="panel book">
-      <div className="panel-h"><span className="title">Order Book</span><span className="spacer" />{coin}</div>
-      <div className="book-rows">
-        <div className="lvl muted" style={{ fontSize: 10 }}><span>Price</span><span>Size</span><span>Total</span></div>
+    <>
+      <div className="col" style={{ gap: 0, minHeight: 0 }}>
+        <div className="panel-h"><span className="t">Order book</span><span className="right dim tiny">click a price to set limit</span></div>
+        <div className="lvl muted" style={{ fontSize: 10.5, cursor: "default" }}><span>Price</span><span>Size</span><span>Total</span></div>
         {asks.map((l, i) => ({ l, c: askCum[i] })).reverse().map(({ l, c }) => (
-          <div key={`a${l.px}`} className="lvl ask clickable" onClick={() => onPrice(l.px)}>
-            <div className="bar" style={{ width: `${(c / max) * 100}%` }} />
+          <div key={`a${l.px}`} className="lvl ask" onClick={() => onPrice(l.px)}>
+            <div className="depth" style={{ width: `${(c / max) * 100}%` }} />
             <span className="down">{px(l.px)}</span><span>{l.sz}</span><span className="muted">{c.toFixed(2)}</span>
           </div>
         ))}
-        <div className="spread">
-          <span>{px(mid)}</span>
-          <span>spread {px(spread)} ({mid ? ((spread / mid) * 1e4).toFixed(1) : "—"} bp)</span>
-        </div>
+        <div className="spread"><span className="accent">{px(mid)}</span><span>spread {px(spread)} · {mid ? ((spread / mid) * 1e4).toFixed(1) : "—"} bp</span></div>
         {bids.map((l, i) => (
-          <div key={`b${l.px}`} className="lvl bid clickable" onClick={() => onPrice(l.px)}>
-            <div className="bar" style={{ width: `${(bidCum[i] / max) * 100}%` }} />
+          <div key={`b${l.px}`} className="lvl bid" onClick={() => onPrice(l.px)}>
+            <div className="depth" style={{ width: `${(bidCum[i] / max) * 100}%` }} />
             <span className="up">{px(l.px)}</span><span>{l.sz}</span><span className="muted">{bidCum[i].toFixed(2)}</span>
           </div>
         ))}
       </div>
-      <div className="panel-h" style={{ borderTop: "1px solid var(--line)" }}><span className="title">Trades</span></div>
-      <div className="scroll tape">
-        {tape.map((t) => (
-          <div key={t.tid}>
-            <span className={t.side === "B" ? "up" : "down"}>{px(t.px)}</span><span>{t.sz}</span><span className="muted">{time(t.time)}</span>
-          </div>
-        ))}
+      <div className="col" style={{ gap: 0, minHeight: 0, borderLeft: "1px solid var(--line)" }}>
+        <div className="panel-h"><span className="t">Trades</span></div>
+        <div className="scroll tape" style={{ flex: 1 }}>
+          {tape.map((t) => (
+            <div key={t.tid}><span className={t.side === "B" ? "up" : "down"}>{px(t.px)}</span><span>{t.sz}</span><span className="muted">{time(t.time)}</span></div>
+          ))}
+          {!tape.length && <div className="empty" style={{ display: "block" }}>waiting for prints…</div>}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
