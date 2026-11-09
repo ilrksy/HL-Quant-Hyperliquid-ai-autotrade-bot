@@ -1,17 +1,15 @@
 // sandboxed preload: exposes the desktop bootstrap to the dashboard as window.hlqDesktop and nothing else
-const { contextBridge } = require("electron");
+const { contextBridge, ipcRenderer } = require("electron");
 
-// command-line switch main uses to hand over the bootstrap json (base64) through additionalArguments
-const FLAG = "--hlq-bootstrap=";
+// ipc channel main answers with the bootstrap; must equal BOOTSTRAP_CHANNEL in main.js
+const CHANNEL = "hlq:bootstrap";
 
-// decodes the bootstrap from process.argv, falling back to plain client mode if it is missing or malformed
+// asks main for the bootstrap once per page load, falling back to plain client mode if it is missing or malformed
 function readBootstrap() {
   const fallback = { platform: process.platform, version: "", hostMode: false, serverUrl: null, token: null };
-  const arg = process.argv.find((a) => a.startsWith(FLAG));
-  if (!arg) return fallback;
   try {
-    const bytes = Uint8Array.from(atob(arg.slice(FLAG.length)), (c) => c.charCodeAt(0));
-    const data = JSON.parse(new TextDecoder().decode(bytes));
+    const data = ipcRenderer.sendSync(CHANNEL);
+    if (!data || typeof data !== "object") return fallback;
     return {
       platform: typeof data.platform === "string" ? data.platform : fallback.platform,
       version: typeof data.version === "string" ? data.version : "",

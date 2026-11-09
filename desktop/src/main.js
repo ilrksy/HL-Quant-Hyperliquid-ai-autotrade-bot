@@ -1,5 +1,5 @@
 // electron main process: owns the dashboard window, the tray and the optional built-in host server
-import { app, BrowserWindow, clipboard, dialog, Menu, nativeImage, Notification, session, shell, Tray } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, Notification, session, shell, Tray } from "electron";
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { networkInterfaces } from "node:os";
@@ -21,6 +21,8 @@ const WEB_INDEX = join(RESOURCES, "web", "index.html");
 const WEB_ROOT_URL = `${pathToFileURL(join(RESOURCES, "web")).href}/`;
 // browser permissions the dashboard may use; everything else (camera, mic, location...) is denied
 const ALLOWED_PERMISSIONS = new Set(["clipboard-read", "clipboard-sanitized-write", "notifications", "fullscreen"]);
+// ipc channel the preload asks for the bootstrap on; must equal CHANNEL in preload.cjs
+const BOOTSTRAP_CHANNEL = "hlq:bootstrap";
 
 // persisted desktop choices (host.json) and the host token
 let cfg;
@@ -81,6 +83,16 @@ function bootstrap() {
   };
 }
 
+// hands the bootstrap over ipc instead of process arguments, which other local users can read in process listings
+function answerBootstrap(event) {
+  try {
+    const own = BrowserWindow.fromWebContents(event.sender) !== null && Boolean(event.senderFrame?.url.startsWith(WEB_ROOT_URL));
+    event.returnValue = own ? bootstrap() : null;
+  } catch {
+    event.returnValue = null;
+  }
+}
+
 // only web and mail links leave the app, and they open in the system browser
 function openExternal(url) {
   if (/^(https?:|mailto:)/i.test(url)) shell.openExternal(url);
@@ -107,9 +119,8 @@ function showTrayHint() {
   new Notification({ title: "HL Quant is still running", body: "The server keeps running in the tray. Use Quit in the tray menu to stop it." }).show();
 }
 
-// creates the dashboard window; the bootstrap is baked into additionalArguments, so a changed bootstrap needs a new window
+// creates the dashboard window; its preload reads the bootstrap once per page load, so a changed bootstrap needs a new window
 function createWindow() {
-  const encoded = Buffer.from(JSON.stringify(bootstrap()), "utf8").toString("base64");
   const w = new BrowserWindow({
     ...(lastBounds ?? { width: 1440, height: 900, center: true }),
     minWidth: 1024,
@@ -126,7 +137,6 @@ function createWindow() {
       sandbox: true,
       webviewTag: false,
       spellcheck: false,
-      additionalArguments: [`--hlq-bootstrap=${encoded}`],
     },
   });
   guardNavigation(w);
@@ -325,6 +335,7 @@ async function boot() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  ipcMain.on(BOOTSTRAP_CHANNEL, answerBootstrap);
   app.on("second-instance", () => showWindow());
   app.on("activate", () => showWindow());
   app.on("before-quit", () => {
