@@ -14,9 +14,13 @@
     "backtest": "tsx server/cli-backtest.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
+    "desktop:start": "npm --prefix desktop start",
     "desktop:win": "npm --prefix desktop run dist:win",
     "desktop:linux": "npm --prefix desktop run dist:linux",
-    "desktop:mac": "npm --prefix desktop run dist:mac"
+    "desktop:mac": "npm --prefix desktop run dist:mac",
+    "android:apk": "npm --prefix mobile run apk",
+    "icons": "npm --prefix desktop run icons",
+    "server:bundle": "node desktop/scripts/bundle-server.mjs"
   },
   "engines": {
     "node": ">=22.13"

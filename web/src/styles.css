@@ -18,6 +18,8 @@
   --mono: "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
   --sans: Inter, "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
   --r: 4px;
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -56,8 +58,8 @@ a { color: var(--accent); text-decoration: none; }
 .hidden { display: none !important; }
 
 /* shell ------------------------------------------------------------------------------------------------- */
-.shell { display: grid; height: 100dvh; grid-template-columns: 68px minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr); background: var(--bg); }
-.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: 0 14px; border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.shell { display: grid; height: 100dvh; grid-template-columns: 68px minmax(0, 1fr); grid-template-rows: calc(44px + var(--sat)) minmax(0, 1fr); background: var(--bg); }
+.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 18px; padding: var(--sat) 14px 0; border-bottom: 1px solid var(--line); background: var(--panel); min-width: 0; overflow-x: auto; scrollbar-width: none; }
 .topbar::-webkit-scrollbar { display: none; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
 .brand svg { flex: none; }
@@ -180,7 +182,7 @@ tr.click { cursor: pointer; }
 code, .code { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; word-break: break-all; }
 
 /* connect ----------------------------------------------------------------------------------------------- */
-.connect { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
+.connect { min-height: 100dvh; display: grid; place-items: center; padding: calc(20px + var(--sat)) 20px calc(20px + var(--sab)); }
 .connect .card { width: min(440px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
 
 /* trade terminal ---------------------------------------------------------------------------------------- */
@@ -274,8 +276,8 @@ code, .code { font-family: var(--mono); font-size: 12px; background: var(--bg); 
   .t-ticket { overflow: visible; }
 }
 @media (max-width: 820px) {
-  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: 44px minmax(0, 1fr) calc(56px + env(safe-area-inset-bottom)); }
-  .nav { grid-row: 3; flex-direction: row; justify-content: space-around; border-right: 0; border-top: 1px solid var(--line); padding: 4px 4px env(safe-area-inset-bottom); }
+  .shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: calc(44px + var(--sat)) minmax(0, 1fr) calc(56px + var(--sab)); }
+  .nav { grid-row: 3; flex-direction: row; justify-content: space-around; border-right: 0; border-top: 1px solid var(--line); padding: 4px 4px var(--sab); }
   .nav a { flex: 1; padding: 6px 0; }
   .topbar { gap: 14px; }
   .topbar .hide-m { display: none; }

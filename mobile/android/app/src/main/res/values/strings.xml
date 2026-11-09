@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">HL Quant</string>
+    <string name="title_activity_main">HL Quant</string>
+    <string name="package_name">com.hlquant.terminal</string>
+    <string name="custom_url_scheme">com.hlquant.terminal</string>
+</resources>

@@ -1,0 +1,12 @@
+node_modules/
+# copy of ../web/dist made by scripts/copy-web.mjs
+www/
+# signing material must never be committed; CI passes it through secrets
+*.jks
+*.keystore
+*.p12
+keystore.properties
+keystore.env
+# local apk copies
+*.apk
+*.aab

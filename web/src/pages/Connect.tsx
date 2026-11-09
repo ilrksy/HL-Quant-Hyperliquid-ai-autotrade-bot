@@ -30,13 +30,13 @@ export function Connect({ onConnected }: { onConnected: (c: Conn) => void }) {
       <form className="card" onSubmit={submit}>
         <div className="row gap-12"><Logo size={34} /><div><div style={{ fontWeight: 700, fontSize: 16 }}>HL Quant</div><div className="muted small">Connect to your self-hosted server</div></div></div>
         <Field label="Server URL" hint="LAN address (http://192.168.x.x:8787), Tailscale name or HTTPS tunnel">
-          <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.20:8787" autoCapitalize="off" autoCorrect="off" spellCheck={false} required />
+          <input className="input" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://192.168.1.20:8787" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
         </Field>
         <Field label="API token" hint="Printed in the server console on first start and stored in data/server.json">
-          <input className="input" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste token" autoComplete="off" required />
+          <input className="input" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="paste token" autoComplete="off" />
         </Field>
         {err && <div className="msg err">{err}</div>}
-        <button className="btn primary block" style={{ height: 36 }} disabled={busy}>{busy ? "Checking…" : "Connect"}</button>
+        <button className="btn primary block" style={{ height: 36 }} disabled={busy || !url.trim() || !token.trim()}>{busy ? "Checking…" : "Connect"}</button>
         <div className="dim tiny" style={{ lineHeight: 1.5 }}>
           Every device (browser, desktop app, Android app) uses this same URL and token. The token stays on this device.
           {desktop && !desktop.hostMode && <> On this computer you can also enable <b>Host mode</b> from the tray icon to run the server locally.</>}
