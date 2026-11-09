@@ -1,6 +1,11 @@
 node_modules/
 web/dist/
 data/
+release/
 .env
+.env.*
+!.env.example
 *.log
 .hoplite/
+*.keystore
+*.jks
