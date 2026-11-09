@@ -1,0 +1,34 @@
+{
+  "name": "hl-quant-desktop",
+  "productName": "HL Quant",
+  "version": "0.1.0",
+  "description": "HL Quant desktop terminal: a thin client for a self-hosted HL Quant server, with an optional built-in host mode",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "homepage": "https://github.com/ilrksy/makanan",
+  "author": {
+    "name": "HL Quant",
+    "email": "hlquant@example.com"
+  },
+  "scripts": {
+    "icons": "node scripts/make-icons.mjs",
+    "stage": "node scripts/prepare.mjs",
+    "bundle:server": "node scripts/bundle-server.mjs",
+    "start": "node scripts/prepare.mjs && electron .",
+    "pack": "node scripts/prepare.mjs && electron-builder --dir",
+    "dist:win": "node scripts/prepare.mjs && electron-builder --win nsis --x64",
+    "dist:linux": "node scripts/prepare.mjs && electron-builder --linux AppImage deb rpm tar.gz --x64",
+    "dist:mac": "node scripts/prepare.mjs && electron-builder --mac dmg --arm64 --x64"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2"
+  },
+  "allowScripts": {
+    "electron": true,
+    "esbuild": true
+  }
+}
