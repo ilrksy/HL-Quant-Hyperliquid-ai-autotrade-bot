@@ -1,106 +1,119 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, type AppState } from "./api";
-import { BotPanel } from "./components/BotPanel";
-import { Bottom } from "./components/Bottom";
-import { PriceChart, type TIMEFRAMES } from "./components/Chart";
-import { MarketList } from "./components/MarketList";
-import { OrderBook } from "./components/OrderBook";
-import { OrderTicket } from "./components/OrderTicket";
-import { compact, pct, px, tone, usd } from "./fmt";
-import { loadMarkets, type MarketRow } from "./hl";
+import { useEffect, useState } from "react";
+import { type Conn, initialConn, setConn } from "./api";
+import { pct, susd, tone, usd } from "./fmt";
+import { type LinkStatus, startLive, stopLive, useLive } from "./live";
+import { Company } from "./pages/Company";
+import { Connect } from "./pages/Connect";
+import { History } from "./pages/History";
+import { Portfolio } from "./pages/Portfolio";
+import { Providers } from "./pages/Providers";
+import { Settings } from "./pages/Settings";
+import { Trade } from "./pages/Trade";
+import { Icon, Logo, Toasts } from "./ui";
 
-// root layout: polls the bot server for account state and hyperliquid for the market universe
-export function App() {
-  const [s, setS] = useState<AppState | null>(null);
-  const [conn, setConn] = useState<"ok" | "err" | "init">("init");
-  const [markets, setMarkets] = useState<MarketRow[]>([]);
-  const [coin, setCoin] = useState(() => localStorage.getItem("coin") ?? "BTC");
-  const [tf, setTf] = useState<(typeof TIMEFRAMES)[number]>("15m");
-  const [sideTab, setSideTab] = useState<"trade" | "bot">("bot");
-  const [limitHint, setLimitHint] = useState<number | null>(null);
+// navigation entries in display order
+const NAV = [
+  { id: "company", label: "Command", icon: "company" },
+  { id: "trade", label: "Trade", icon: "trade" },
+  { id: "ai", label: "AI", icon: "ai" },
+  { id: "history", label: "History", icon: "history" },
+  { id: "portfolio", label: "Portfolio", icon: "portfolio" },
+  { id: "settings", label: "Settings", icon: "settings" },
+] as const;
+// one page id
+type PageId = (typeof NAV)[number]["id"];
 
-  const refresh = useCallback(() => {
-    api.state().then((x) => { setS(x); setConn("ok"); }).catch(() => setConn("err"));
+// current page from the location hash, defaulting to the command center
+function readHash(): PageId {
+  const id = location.hash.replace(/^#\/?/, "").split(/[?/]/)[0];
+  return (NAV.find((n) => n.id === id)?.id ?? "company") as PageId;
+}
+
+// hash router so every page is linkable and works from file:// in the desktop app
+function useRoute(): PageId {
+  const [page, setPage] = useState<PageId>(readHash);
+  useEffect(() => {
+    const on = () => setPage(readHash());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
   }, []);
+  return page;
+}
 
+// connection gate: shows the connect screen until a server and token are verified
+export function App() {
+  const [conn, setC] = useState<Conn | null>(() => {
+    const c = initialConn();
+    if (c) setConn(c);
+    return c;
+  });
   useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 2000);
-    return () => clearInterval(id);
-  }, [refresh]);
+    if (!conn) return;
+    startLive();
+    return () => stopLive();
+  }, [conn]);
+  const connect = (c: Conn) => { setConn(c); setC(c); };
+  const disconnect = () => { setConn(null); setC(null); };
+  return (
+    <>
+      {conn ? <Shell conn={conn} onDisconnect={disconnect} /> : <Connect onConnected={connect} />}
+      <Toasts />
+    </>
+  );
+}
 
-  const testnet = s?.testnet ?? false;
-  useEffect(() => {
-    const load = () => loadMarkets(testnet).then(setMarkets).catch(() => {});
-    load();
-    const id = setInterval(load, 5000);
-    return () => clearInterval(id);
-  }, [testnet]);
+// link status label and colour for the top bar
+const LINK: Record<LinkStatus, [string, string]> = {
+  connecting: ["connecting", "warn"], live: ["live", "ok"], polling: ["polling", "warn"], offline: ["offline", "error"], unauthorized: ["token rejected", "error"],
+};
 
-  useEffect(() => { localStorage.setItem("coin", coin); }, [coin]);
-
-  const m = markets.find((x) => x.name === coin);
+// app frame: top bar with account vitals, side or bottom navigation, and the active page
+function Shell({ conn, onDisconnect }: { conn: Conn; onDisconnect: () => void }) {
+  const page = useRoute();
+  const { state: s, status } = useLive();
   const a = s?.account;
   const upnl = a?.positions.reduce((t, p) => t + p.unrealizedPnl, 0) ?? 0;
-  const dayPnl = a && s?.bot.dayStartEquity ? a.equity - s.bot.dayStartEquity : 0;
+  const day = a && s?.bot.dayStartEquity ? a.equity - s.bot.dayStartEquity : 0;
   const dd = a && s?.bot.peakEquity ? ((s.bot.peakEquity - a.equity) / s.bot.peakEquity) * 100 : 0;
-
+  const aiUp = s?.ai.providers.filter((p) => p.health === "healthy" || p.health === "degraded").length ?? 0;
+  const [label, cls] = LINK[status];
   return (
-    <div className="app">
-      <div className="panel topbar">
-        <span className="brand">HL·QUANT</span>
-        {s && <span className={`badge ${s.mode}`}>{s.mode.toUpperCase()}{s.testnet ? " · TESTNET" : ""}</span>}
-        <div className="stat"><span className="k">Equity</span><span className="v">{usd(a?.equity)}</span></div>
-        <div className="stat"><span className="k">Available</span><span className="v">{usd(a?.available)}</span></div>
-        <div className="stat"><span className="k">Margin used</span><span className="v">{usd(a?.marginUsed)}</span></div>
-        <div className="stat"><span className="k">Unrealised</span><span className={`v ${tone(upnl)}`}>{usd(upnl, 3)}</span></div>
-        <div className="stat"><span className="k">Today</span><span className={`v ${tone(dayPnl)}`}>{usd(dayPnl, 3)}</span></div>
-        <div className="stat"><span className="k">Drawdown</span><span className={`v ${dd > 0 ? "down" : ""}`}>{dd.toFixed(2)}%</span></div>
-        <div className="stat"><span className="k">Bot</span>
-          <span className="v">{s?.bot.running ? <span className="up">RUNNING</span> : s?.bot.halted ? <span className="down">HALTED</span> : <span className="muted">IDLE</span>}</span>
+    <div className="shell">
+      <header className="topbar">
+        <div className="brand"><Logo /> HL&nbsp;QUANT</div>
+        {s && <span className={`badge ${s.mode === "live" ? "bad" : "info"}`}>{s.mode}{s.testnet ? " · testnet" : ""}</span>}
+        <div className="tstat"><span className="k">Equity</span><span className="v">{usd(a?.equity)}</span></div>
+        <div className="tstat hide-m"><span className="k">Available</span><span className="v">{usd(a?.available)}</span></div>
+        <div className="tstat"><span className="k">Unrealized</span><span className={`v ${tone(upnl)}`}>{susd(upnl, 3)}</span></div>
+        <div className="tstat"><span className="k">Today</span><span className={`v ${tone(day)}`}>{susd(day, 3)}</span></div>
+        <div className="tstat hide-m"><span className="k">Drawdown</span><span className={`v ${dd > 0.01 ? "down" : ""}`}>{pct(-dd)}</span></div>
+        <div className="tstat"><span className="k">Autotrade</span>
+          <span className="v">{s?.bot.armed ? <span className="up">ARMED</span> : s?.bot.halted ? <span className="down">HALTED</span> : <span className="muted">OFF</span>}</span>
         </div>
-        <span style={{ flex: 1 }} />
-        {a?.address && <span className="muted mono">{a.address.slice(0, 6)}…{a.address.slice(-4)}</span>}
-        <span className="muted"><span className={`dot ${conn === "ok" ? "on" : conn === "err" ? "err" : ""}`} />{conn === "err" ? "server offline" : "connected"}</span>
-      </div>
-
-      <MarketList markets={markets} selected={coin} onSelect={setCoin} botCoins={s?.config.coins ?? []} />
-
-      <div className="panel chart">
-        <div className="chart-head">
-          <span className="sym">{coin}-PERP</span>
-          <span className={`last ${tone(m?.change ?? 0)}`}>{px(m?.mark)}</span>
-          <span className={tone(m?.change ?? 0)}>{pct(m?.change ?? 0)}</span>
-          <span className="muted">Funding/h <span className={`mono ${tone(-(m?.funding ?? 0))}`}>{((m?.funding ?? 0) * 100).toFixed(4)}%</span></span>
-          <span className="muted">OI <span className="mono">${compact(m?.openInterest ?? 0)}</span></span>
-          <span className="muted">24h Vol <span className="mono">${compact(m?.volume ?? 0)}</span></span>
-          <span className="muted">Max <span className="mono">{m?.maxLeverage ?? "—"}x</span></span>
-        </div>
-        <PriceChart coin={coin} testnet={testnet} tf={tf} onTf={setTf}
-          position={a?.positions.find((p) => p.coin === coin)} fills={a?.fills ?? []} />
-      </div>
-
-      <OrderBook coin={coin} testnet={testnet} onPrice={(p) => { setLimitHint(p); setSideTab("trade"); }} />
-
-      <div className="panel side">
-        <div className="tabs">
-          <button className={sideTab === "bot" ? "on" : ""} onClick={() => setSideTab("bot")}>AI Autotrade</button>
-          <button className={sideTab === "trade" ? "on" : ""} onClick={() => setSideTab("trade")}>Manual trade</button>
-        </div>
-        <div className="scroll">
-          {!s ? <div className="empty">connecting to bot server…</div>
-            : sideTab === "bot" ? <BotPanel s={s} refresh={refresh} />
-            : <OrderTicket market={m} available={a?.available ?? 0} limitHint={limitHint} onDone={refresh} />}
-          <div className="form">
-            <div className="warn-box">
-              No trading system can guarantee profit. Perps with leverage can lose your entire deposit.
-              Run paper mode and backtests first; only trade money you can afford to lose.
-            </div>
+        <div className="tstat hide-m"><span className="k">AI</span><span className="v">{s ? (s.ai.mode === "off" ? <span className="muted">off</span> : `${aiUp}/${s.ai.providers.length} up`) : "—"}</span></div>
+        <span className="grow" />
+        <span className="row small nowrap hide-m" title={conn.url}><span className={`dot ${cls}`} />{label}</span>
+        <button className="btn ghost icon-btn" title={`Disconnect from ${conn.url}`} onClick={() => confirm("Disconnect from this server?") && onDisconnect()}><Icon name="logout" /></button>
+      </header>
+      <nav className="nav" aria-label="Main">
+        {NAV.map((n) => (
+          <a key={n.id} href={`#/${n.id}`} className={page === n.id ? "on" : ""}><Icon name={n.icon} size={18} />{n.label}</a>
+        ))}
+      </nav>
+      <main className="main">
+        {status === "unauthorized" && (
+          <div className="page" style={{ minHeight: 0, paddingBottom: 0 }}>
+            <div className="msg err row">The server rejected the saved API token. <button className="btn sm right" onClick={onDisconnect}>Reconnect</button></div>
           </div>
-        </div>
-      </div>
-
-      {s ? <Bottom s={s} refresh={refresh} coin={coin} /> : <div className="panel bottom"><div className="empty">waiting for bot server on :8787 …</div></div>}
+        )}
+        {!s ? <div className="empty" style={{ paddingTop: 80 }}>{status === "offline" ? `Cannot reach ${conn.url}. Retrying…` : "Loading…"}</div>
+          : page === "trade" ? <Trade s={s} />
+          : page === "ai" ? <Providers s={s} />
+          : page === "history" ? <History />
+          : page === "portfolio" ? <Portfolio s={s} />
+          : page === "settings" ? <Settings s={s} conn={conn} onDisconnect={onDisconnect} />
+          : <Company s={s} />}
+      </main>
     </div>
   );
 }

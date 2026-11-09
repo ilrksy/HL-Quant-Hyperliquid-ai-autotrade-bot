@@ -1,20 +1,25 @@
 {
-  "name": "hl-quant-terminal",
-  "version": "0.1.0",
+  "name": "hl-quant",
+  "version": "0.2.0",
+  "description": "Self-hosted AI trading company for Hyperliquid perpetuals: multi-agent pipeline, multi-provider AI with fallback, risk engine, Telegram and cross-platform dashboard",
   "private": true,
   "type": "module",
+  "license": "MIT",
   "scripts": {
     "dev": "concurrently -k -n server,web -c blue,green \"npm:dev:server\" \"npm:dev:web\"",
     "dev:server": "tsx watch server/index.ts",
     "dev:web": "vite",
     "build": "tsc --noEmit && vite build",
-    "start": "NODE_ENV=production tsx server/index.ts",
+    "start": "tsx server/index.ts",
     "backtest": "tsx server/cli-backtest.ts",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "desktop:win": "npm --prefix desktop run dist:win",
+    "desktop:linux": "npm --prefix desktop run dist:linux",
+    "desktop:mac": "npm --prefix desktop run dist:mac"
   },
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "dependencies": {
     "@nktkas/hyperliquid": "^0.33.3",
