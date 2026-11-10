@@ -1,0 +1,39 @@
+# HL Quant server as a systemd service, running the TypeScript sources with tsx from /opt/hl-quant
+# install steps: deploy/README.md ("Linux server with systemd")
+[Unit]
+Description=HL Quant self-hosted trading server
+Documentation=https://github.com/ilrksy/makanan/blob/HEAD/deploy/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hlquant
+Group=hlquant
+WorkingDirectory=/opt/hl-quant
+Environment=NODE_ENV=production
+Environment=HOME=/var/lib/hl-quant
+Environment=DATA_DIR=/var/lib/hl-quant
+Environment=npm_config_cache=/var/cache/hl-quant/npm
+Environment=npm_config_update_notifier=false
+# optional: HOST=0.0.0.0, API_TOKEN, TRADING_MODE ... (see .env.example); values here override the ones above
+EnvironmentFile=-/opt/hl-quant/.env
+ExecStart=/usr/bin/env npx tsx server/index.ts
+Restart=always
+RestartSec=5
+TimeoutStopSec=20
+StateDirectory=hl-quant
+StateDirectoryMode=0700
+CacheDirectory=hl-quant
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
